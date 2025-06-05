@@ -1,3 +1,3 @@
-# Minesweeper
+# MineCweeper
 
-Implementation of Minesweeper in C using Raylib
+Basic implementation of Minesweeper in C using Raylib

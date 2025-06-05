@@ -4,6 +4,10 @@
 #include <tgmath.h>
 #include <time.h>
 
+#include <libgen.h>
+#include <limits.h>
+#include <unistd.h>
+
 #include "raylib.h"
 #include "raymath.h"
 
@@ -89,6 +93,7 @@ int scanSize = 5;
 // Module Functions Declaration
 //----------------------------------------------------------------------------------
 void UpdateDrawFrame(void);     // Update and Draw one frame
+char* GetResourcePath(void);
 void InitMap(struct Grid* gp);
 void ShuffleMap(struct Grid* gp, int tileRevealed);
 void GenMap(struct Grid* gp);
@@ -112,9 +117,10 @@ int main() {
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "Minesweeper");
-    spriteSheet = LoadTexture("../resources/spriteSheet.png");
 
-    gameFont = gameFont = LoadFont("../resources/fonts/alpha_beta.png");
+    spriteSheet = LoadTexture("resources/spriteSheet.png");
+
+    gameFont = gameFont = LoadFont("resources/fonts/alpha_beta.png");
 
     //SetRandomSeed((unsigned int)time(NULL));
     srand((unsigned int)time(NULL)); //Comment out for predictable maps
@@ -184,8 +190,8 @@ int main() {
     return 0;
 }
 
-void UpdateDrawFrame(void)
-{
+
+void UpdateDrawFrame(void) {
     // Update
 
     mousePos = GetMousePosition();
