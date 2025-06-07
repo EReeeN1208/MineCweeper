@@ -30,17 +30,20 @@
 // Global Variables Definition
 //----------------------------------------------------------------------------------
 int screenWidth = 960;
-int screenHeight = 600;
+int screenHeight = 720;
 
 Font gameFont;
 int hudFontSize = 56;
 int hudFontSpacing = 6;
+
+int sp = 10; //selection padding
 
 int buttonSelected;
 
 Color BGGRAY = (Color){128,128,128,255};
 
 char gameStage = 2; //-1-> lost, 0->not started, 1->Started, 2->menu 3->victory
+char difficulty = 1; // 0 -> easy, 1 -> medium, 2 -> hard, 3 -> custom
 
 Vector2 mousePos;
 
@@ -70,8 +73,18 @@ struct Grid {
     int bombCount, bombsFlagged, flagCount, tilesRevealed;
 };
 
+struct Setting {
+    int h, w, bombCount;
+    char difficulty;
+};
+
 // minesweeper map
 struct Grid grid;
+
+// Difficulty settingd
+struct Setting easy;
+struct Setting medium;
+struct Setting hard;
 
 Texture2D spriteSheet;
 
@@ -81,6 +94,7 @@ int textureColumns = 8;
 int h = 12;
 int w = 16;
 int len;
+int maxLen;
 
 //int bombCount = 40;
 
@@ -89,6 +103,16 @@ char surroundingTiles[9];
 
 int scanSize = 5;
 
+//UI STUFF
+Vector2 textLenEasy;
+Vector2 textLenMedium;
+Vector2 textLenHard;
+Vector2 textLenCustom;
+
+Vector2 textPosEasy;
+Vector2 textPosMedium;
+Vector2 textPosHard;
+Vector2 textPosCustom;
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
 //----------------------------------------------------------------------------------
@@ -107,6 +131,7 @@ void FlagTile(struct Grid* gp, int gridPos);
 void RevealEmptyTiles(struct Grid* gp, int gridPos);
 int DrawHud(Vector2 mousePos);
 void LoseGame(struct Grid* gp, int gridPos);
+char UpdateDifficulty(struct Grid* gp, struct Setting* setting);
 
 
 //----------------------------------------------------------------------------------
@@ -125,7 +150,26 @@ int main() {
     //SetRandomSeed((unsigned int)time(NULL));
     srand((unsigned int)time(NULL)); //Comment out for predictable maps
 
+    //set difficulties
+    easy.h = 8;
+    easy.w = 12;
+    easy.bombCount = 20;
+    easy.difficulty = 0;
+
+    medium.h = 12;
+    medium.w = 16;
+    medium.bombCount = 36;
+    medium.difficulty = 1;
+
+    hard.h = 16;
+    hard.w = 24;
+    hard.bombCount = 80;
+    hard.difficulty = 2;
+
     len = h*w;
+
+    maxLen = hard.h * hard.w;
+
 
     for (int i = 0; i < textureCount; i++) {
         sprites[i].x = ((int)(i % 8) * 16);
@@ -143,16 +187,16 @@ int main() {
 
     startPos.x = 6 + (screenWidth - gameSize.x) / 2;
 
-    hudPos.x = startPos.x - (12 + 200);
+    hudPos.x = 6 + (screenWidth - 16 * tileLen) / 2 - (12 + 200);
     hudPos.y = startPos.y-100;
 
-    hudSize.x = gameSize.x + (9 + 200*2);
+    hudSize.x = 16 * tileLen + (9 + 200*2);
     hudSize.y = 68;
 
-    char tiles[len];
-    char map[len];
-    int tilesScanned[scanSize*len];
-    int scanQue[scanSize*len];
+    char tiles[maxLen];
+    char map[maxLen];
+    int tilesScanned[scanSize*maxLen];
+    int scanQue[scanSize*maxLen];
 
     grid.h = h;
     grid.w = w;
@@ -164,8 +208,21 @@ int main() {
     grid.scanQue = &scanQue[0];
     grid.quePos = 0;
 
-
     InitMap(&grid);
+
+    difficulty = UpdateDifficulty(&grid, &medium);
+
+    //UI STUFF
+    textLenEasy = MeasureTextEx(gameFont, "Easy", hudFontSize, hudFontSpacing);
+    textLenMedium = MeasureTextEx(gameFont, "Medium", hudFontSize, hudFontSpacing);
+    textLenHard = MeasureTextEx(gameFont, "Hard", hudFontSize, hudFontSpacing);
+    textLenCustom = MeasureTextEx(gameFont, "Custom - Coming Soon", hudFontSize, hudFontSpacing);
+
+    textPosEasy = (Vector2){(screenWidth - textLenEasy.x) / 2, hudPos.y+100+80*1};
+    textPosMedium = (Vector2){(screenWidth - textLenMedium.x) / 2, hudPos.y+100+80*2};
+    textPosHard = (Vector2){(screenWidth - textLenHard.x) / 2, hudPos.y+100+80*3};
+    textPosCustom = (Vector2){(screenWidth - textLenCustom.x) / 2, hudPos.y+100+80*4};
+
 
 
 
@@ -224,7 +281,7 @@ void UpdateDrawFrame(void) {
         FlagTile(&grid, gridPos);
     }
 
-    if (grid.len - grid.bombCount == grid.tilesRevealed) {
+    if (grid.len - grid.bombCount < grid.tilesRevealed && grid.bombCount == grid.bombsFlagged) {
         gameStage = 3;
     }
 
@@ -268,6 +325,18 @@ void UpdateDrawFrame(void) {
                 InitMap(&grid);
                 break;
             }
+            case 3: {
+                difficulty = UpdateDifficulty(&grid, &easy);
+                break;
+            }
+            case 4: {
+                difficulty = UpdateDifficulty(&grid, &medium);
+                break;
+            }
+            case 5: {
+                difficulty = UpdateDifficulty(&grid, &hard);
+                break;
+            }
         }
     }
 }
@@ -277,9 +346,8 @@ void InitMap(struct Grid* gp) {
     printf("InitMap ran\n");
 
     //bomb gen
-    gp->bombCount = (int)(2.35 * sqrt(gp->len));
+    //gp->bombCount = (int)(2.35 * sqrt(gp->len));
     //gp->bombCount = 5;
-
 
     grid.bombsFlagged = 0;
     grid.flagCount = 0;
@@ -554,17 +622,45 @@ int DrawHud(Vector2 mousePos) {
 
     Vector2 textLen4 = MeasureTextEx(gameFont, endText, hudFontSize, hudFontSpacing);
 
-    Vector2 textPos4 = {(screenWidth - textLen4.x) / 2, 520};
+    Vector2 textPos4 = {(screenWidth - textLen4.x) / 2, 640};
 
     Vector2 relativePos1 = Vector2Subtract(mousePos, textPos1);
     Vector2 relativePos2 = Vector2Subtract(mousePos, textPos2);
+
+    Vector2 relativePosEasy = Vector2Subtract(mousePos, textPosEasy);
+    Vector2 relativePosMedium = Vector2Subtract(mousePos, textPosMedium);
+    Vector2 relativePosHard = Vector2Subtract(mousePos, textPosHard);
+    Vector2 relativePosCustom = Vector2Subtract(mousePos, textPosCustom);
+
     int cursorPos = -1;
-    if (relativePos1.x > 0 && relativePos1.y > 0 && relativePos1.x < textLen1.x && relativePos1.y < textLen1.y) {
-        cursorPos = 1;
+    if (gameStage == 2) {
+        if (relativePos1.x > 0 && relativePos1.y > 0 && relativePos1.x < textLen1.x && relativePos1.y < textLen1.y) {
+            cursorPos = 1;
+        }
+        else if (relativePos2.x > 0 && relativePos2.y > 0 && relativePos2.x < textLen2.x && relativePos2.y < textLen2.y) {
+            cursorPos = 2;
+        }
+        else if (relativePosEasy.x > 0 && relativePosEasy.y > 0 && relativePosEasy.x < textLenEasy.x && relativePosEasy.y < textLenEasy.y) {
+            cursorPos = 3;
+        }
+        else if (relativePosMedium.x > 0 && relativePosMedium.y > 0 && relativePosMedium.x < textLenMedium.x && relativePosMedium.y < textLenMedium.y) {
+            cursorPos = 4;
+        }
+        else if (relativePosHard.x > 0 && relativePosHard.y > 0 && relativePosHard.x < textLenHard.x && relativePosHard.y < textLenHard.y) {
+            cursorPos = 5;
+        }
+        else if (relativePosCustom.x > 0 && relativePosCustom.y > 0 && relativePosCustom.x < textLenCustom.x && relativePosCustom.y < textLenCustom.y) {
+            cursorPos = 6;
+        }
+    } else {
+        if (relativePos1.x > 0 && relativePos1.y > 0 && relativePos1.x < textLen1.x && relativePos1.y < textLen1.y) {
+            cursorPos = 1;
+        }
+        else if (relativePos2.x > 0 && relativePos2.y > 0 && relativePos2.x < textLen2.x && relativePos2.y < textLen2.y) {
+            cursorPos = 2;
+        }
     }
-    else if (relativePos2.x > 0 && relativePos2.y > 0 && relativePos2.x < textLen2.x && relativePos2.y < textLen2.y) {
-        cursorPos = 2;
-    }
+
 
     char secondText[6] = "";
 
@@ -587,6 +683,43 @@ int DrawHud(Vector2 mousePos) {
         DrawTextEx(gameFont, secondText, textPos2, hudFontSize, hudFontSpacing , BLACK);
     }
 
+    if (gameStage == 2) {
+        switch (difficulty) {
+            case 0: {
+                DrawRectangle((int)textPosEasy.x - sp, (int)textPosEasy.y -sp, (int)textLenEasy.x + 2*sp, (int)textLenEasy.y + 2*sp, LIME);
+                break;
+            }
+            case 1: {
+                DrawRectangle((int)textPosMedium.x - sp, (int)textPosMedium.y -sp, (int)textLenMedium.x + 2*sp, (int)textLenMedium.y + 2*sp, LIME);
+                break;
+            }
+            case 2: {
+                DrawRectangle((int)textPosHard.x - sp, (int)textPosHard.y -sp, (int)textLenHard.x + 2*sp, (int)textLenHard.y + 2*sp, LIME);
+                break;
+            }
+        }
+
+
+        if (cursorPos == 3) {
+            DrawTextEx(gameFont, "Easy", textPosEasy, hudFontSize, hudFontSpacing , DARKGRAY);
+        } else {
+            DrawTextEx(gameFont, "Easy", textPosEasy, hudFontSize, hudFontSpacing , BLACK);
+        }
+
+        if (cursorPos == 4) {
+            DrawTextEx(gameFont, "Medium", textPosMedium, hudFontSize, hudFontSpacing , DARKGRAY);
+        } else {
+            DrawTextEx(gameFont, "Medium", textPosMedium, hudFontSize, hudFontSpacing , BLACK);
+        }
+
+        if (cursorPos == 5) {
+            DrawTextEx(gameFont, "Hard", textPosHard, hudFontSize, hudFontSpacing , DARKGRAY);
+        } else {
+            DrawTextEx(gameFont, "Hard", textPosHard, hudFontSize, hudFontSpacing , BLACK);
+        }
+
+        DrawTextEx(gameFont, "Custom - Coming Soon", textPosCustom, hudFontSize, hudFontSpacing , BLACK);
+    }
     DrawTextEx(gameFont, minesLeft, textPos3, hudFontSize, hudFontSpacing , BLACK);
 
     DrawTextEx(gameFont, endText, textPos4, hudFontSize, hudFontSpacing , BLACK);
@@ -597,6 +730,10 @@ int DrawHud(Vector2 mousePos) {
 
     //DrawText("Eren Kural", screenWidth - 100, screenHeight - 24, 18, BLACK);
     DrawTextEx(gameFont, "Eren Kural", creditPos, 18, 2, BLACK);
+
+
+
+
 
     return cursorPos;
 }
@@ -610,4 +747,21 @@ void LoseGame(struct Grid* gp, int gridPos) {
         }
     }
     gp->tiles[gridPos] = BOMB_RED;
+}
+
+char UpdateDifficulty(struct Grid* gp, struct Setting* setting) {
+    h = gp->h = setting->h;
+    w = gp->w = setting->w;
+    gp->bombCount = setting->bombCount;
+
+    len = h*w;
+    gameSize.x = (int)(w * tileLen);
+    gameSize.y = (int)(h * tileLen);
+
+    startPos.x = 6 + (screenWidth - gameSize.x) / 2;
+
+    grid.len = len;
+
+
+    return setting->difficulty;
 }
