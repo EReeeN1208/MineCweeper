@@ -4,25 +4,15 @@ project(Minesweeper C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Dependencies
-set(RAYLIB_VERSION 5.5)
-find_package(raylib ${RAYLIB_VERSION} QUIET)
-if (NOT raylib_FOUND)
-    include(FetchContent)
-    FetchContent_Declare(
-            raylib
-            DOWNLOAD_EXTRACT_TIMESTAMP OFF
-            URL https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz
-    )
-    FetchContent_GetProperties(raylib)
-    if (NOT raylib_POPULATED)
-        set(FETCHCONTENT_QUIET NO)
-        FetchContent_MakeAvailable(raylib)
-    endif()
-endif()
+include(FetchContent)
+
+
+
+add_subdirectory(vendor/raylib-master)
 
 # Our Project
 add_executable(${PROJECT_NAME} src/main.c)
+add_subdirectory(src)
 target_link_libraries(${PROJECT_NAME} raylib)
 
 # Web Configurations
@@ -39,11 +29,9 @@ if (APPLE)
 endif()
 
 
-# === COPY RESOURCES FOLDER TO BUILD DIR (CLION COMPATIBLE) ===
+
+
 add_custom_command(
-        TARGET ${PROJECT_NAME} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_BINARY_DIR}/src
-        COMMENT "Copying resources to build directory"
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
 )

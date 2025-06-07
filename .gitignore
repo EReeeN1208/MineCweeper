@@ -3,6 +3,7 @@
 *.DS_Store
 /build
 /cmake-build-debug
+/ignored
 
 ### C++ template
 # Compiled Object files
