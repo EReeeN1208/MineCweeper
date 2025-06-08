@@ -176,7 +176,7 @@ int main() {
 
     spriteSheet = LoadTexture("resources/spriteSheet.png");
 
-    gameFont = gameFont = LoadFont("resources/fonts/alpha_beta.png");
+    gameFont = LoadFont("resources/fonts/alpha_beta.png");
 
     //SetRandomSeed((unsigned int)time(NULL));
     srand((unsigned int)time(NULL)); //Comment out for predictable/nonrandom maps
