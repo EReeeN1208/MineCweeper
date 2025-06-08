@@ -47,21 +47,21 @@ char difficulty = 1; // 0 -> easy, 1 -> medium, 2 -> hard, 3 -> custom
 
 Vector2 mousePos;
 
-struct Vector2 hudPos = {40, 120};
-struct Vector2 hudSize = {0, 0};
-struct Vector2 startPos = {40, 120};
-struct Vector2 gameSize = {0, 0};
+//struct Vector2 hudPos = {40, 120};
+//struct Vector2 hudSize = {0, 0};
+Vector2 startPos = {40, 120};
+Vector2 gameSize = {0, 0};
 
 int textureSize = 16;
 
-struct Vector2 textureOrigin;
-struct Vector2 tileLenVec;
+Vector2 textureOrigin;
+Vector2 tileLenVec;
 int tileLen;
 
 int textureCount = 16;
 
-struct Vector2 textureRect = {16, 16 };
-struct Rectangle sprites[16];
+Vector2 textureRect = {16, 16 };
+Rectangle sprites[16];
 
 struct Grid {
     int h, w, len; //height, width, length
@@ -78,10 +78,34 @@ struct Setting {
     char difficulty;
 };
 
-// minesweeper map
-struct Grid grid;
+struct Text {
+    char* text;
+    Color color;
+    Vector2 size;
+    Vector2 pos;
+    int fontSize;
+    int fontSpacing;
+    Rectangle collisionBox;
+};
 
-// Difficulty settingd
+struct Hud {
+    Color hudColor;
+    Vector2 hudSize;
+    Vector2 hudPos;
+    struct Text* texts;
+};
+
+struct Menu {
+    Vector2 menuPos;
+    struct Text* texts;
+};
+
+// minesweeper map/hud/menu init
+struct Grid grid;
+struct Hud hud;
+struct Menu menu;
+
+// Difficulty settings
 struct Setting easy;
 struct Setting medium;
 struct Setting hard;
@@ -129,8 +153,15 @@ int GetSurroundingBombCount(struct Grid* gp, int tile);
 int RevealTile(struct Grid* gp, int gridPos);
 void FlagTile(struct Grid* gp, int gridPos);
 void RevealEmptyTiles(struct Grid* gp, int gridPos);
-int DrawHud(Vector2 mousePos);
+void InitUI(struct Hud* hudp, struct Menu* menup);
+int DrawUI(Vector2 mousePos, struct Hud* hudp, struct Menu* menup);
+void RecalculateTextSize(struct Text* textp);
+void RecalculateTextCollisionBox(struct Text* textp);
+Rectangle RectangleFromVector2(Vector2* pos, Vector2* size);
+void DrawTextFromStruct(struct Text* textp);
+void DrawTextFromStructColor(struct Text* textp, Color color);
 void LoseGame(struct Grid* gp, int gridPos);
+void InitDifficulty(void);
 char UpdateDifficulty(struct Grid* gp, struct Setting* setting);
 
 
@@ -148,28 +179,13 @@ int main() {
     gameFont = gameFont = LoadFont("resources/fonts/alpha_beta.png");
 
     //SetRandomSeed((unsigned int)time(NULL));
-    srand((unsigned int)time(NULL)); //Comment out for predictable maps
+    srand((unsigned int)time(NULL)); //Comment out for predictable/nonrandom maps
 
-    //set difficulties
-    easy.h = 8;
-    easy.w = 12;
-    easy.bombCount = 20;
-    easy.difficulty = 0;
-
-    medium.h = 12;
-    medium.w = 16;
-    medium.bombCount = 36;
-    medium.difficulty = 1;
-
-    hard.h = 16;
-    hard.w = 24;
-    hard.bombCount = 80;
-    hard.difficulty = 2;
+    InitDifficulty();
 
     len = h*w;
 
     maxLen = hard.h * hard.w;
-
 
     for (int i = 0; i < textureCount; i++) {
         sprites[i].x = ((int)(i % 8) * 16);
@@ -187,20 +203,10 @@ int main() {
 
     startPos.x = 6 + (screenWidth - gameSize.x) / 2;
 
-    hudPos.x = 6 + (screenWidth - 16 * tileLen) / 2 - (12 + 200);
-    hudPos.y = startPos.y-100;
-
-    hudSize.x = 16 * tileLen + (9 + 200*2);
-    hudSize.y = 68;
-
     char tiles[maxLen];
     char map[maxLen];
     int tilesScanned[scanSize*maxLen];
     int scanQue[scanSize*maxLen];
-
-    grid.h = h;
-    grid.w = w;
-    grid.len = len;
 
     grid.tiles = &tiles[0];
     grid.map = &map[0];
@@ -212,18 +218,7 @@ int main() {
 
     difficulty = UpdateDifficulty(&grid, &medium);
 
-    //UI STUFF
-    textLenEasy = MeasureTextEx(gameFont, "Easy", hudFontSize, hudFontSpacing);
-    textLenMedium = MeasureTextEx(gameFont, "Medium", hudFontSize, hudFontSpacing);
-    textLenHard = MeasureTextEx(gameFont, "Hard", hudFontSize, hudFontSpacing);
-    textLenCustom = MeasureTextEx(gameFont, "Custom - Coming Soon", hudFontSize, hudFontSpacing);
-
-    textPosEasy = (Vector2){(screenWidth - textLenEasy.x) / 2, hudPos.y+100+80*1};
-    textPosMedium = (Vector2){(screenWidth - textLenMedium.x) / 2, hudPos.y+100+80*2};
-    textPosHard = (Vector2){(screenWidth - textLenHard.x) / 2, hudPos.y+100+80*3};
-    textPosCustom = (Vector2){(screenWidth - textLenCustom.x) / 2, hudPos.y+100+80*4};
-
-
+    InitUI(&hud, &menu);
 
 
 #if defined(PLATFORM_WEB)
@@ -292,7 +287,8 @@ void UpdateDrawFrame(void) {
         ClearBackground(RAYWHITE);
 
         //Draw hud and get cursor overlap
-        buttonSelected = DrawHud(mousePos);
+        buttonSelected = DrawUI(mousePos, &hud, &menu);
+        //buttonSelected = 0;
 
         if (gameStage != 2) { //Game
 
@@ -341,13 +337,18 @@ void UpdateDrawFrame(void) {
     }
 }
 
+// Initialise/Reset the map.
 void InitMap(struct Grid* gp) {
 
-    printf("InitMap ran\n");
+    //printf("InitMap ran\n");
 
     //bomb gen
     //gp->bombCount = (int)(2.35 * sqrt(gp->len));
     //gp->bombCount = 5;
+
+    grid.h = h;
+    grid.w = w;
+    grid.len = len;
 
     grid.bombsFlagged = 0;
     grid.flagCount = 0;
@@ -366,10 +367,10 @@ void InitMap(struct Grid* gp) {
     }
 }
 
-
+// Shuffle the map after user clicks the first tile. The initial 3x3 tiles the user clicks are always 0.
 void ShuffleMap(struct Grid* gp, int tileRevealed) {
 
-    printf("ShuffleMap ran\n");
+    //printf("ShuffleMap ran\n");
 
     int tileX = tileRevealed % gp->w;
     int tileY = tileRevealed / gp->w;
@@ -410,6 +411,7 @@ void ShuffleMap(struct Grid* gp, int tileRevealed) {
     }
 }
 
+// Fill the map array with number tiles according to the bombs.
 void GenMap(struct Grid* gp) {
     for (int i = 0; i < gp->len; i++) {
         if (gp->map[i] != BOMB) {
@@ -423,6 +425,7 @@ void GenMap(struct Grid* gp) {
     }
 }
 
+// Convert a pixel on the map to the tile it corresponds to
 int PixelToGrid(struct Grid* gp, Vector2 origin, Vector2 mousePos) {
 
     Vector2 pos = Vector2Subtract(mousePos, origin);
@@ -441,6 +444,7 @@ int PixelToGrid(struct Grid* gp, Vector2 origin, Vector2 mousePos) {
     return gridX + gridY * gp->w;
 }
 
+// Check if a given tile index is within the len of the map.
 int TileInBounds(struct Grid* gp, int tile) {
     /*
     int tileX = tile % gp->w;
@@ -454,6 +458,7 @@ int TileInBounds(struct Grid* gp, int tile) {
     return 0;
 }
 
+// Check if given x and y are withing the grid.
 int XYInBounds(struct Grid* gp, int tileX, int tileY) {
 
     if (tileX >= 0 && tileY >= 0 && tileX < gp->w && tileY < gp->h) {
@@ -462,11 +467,12 @@ int XYInBounds(struct Grid* gp, int tileX, int tileY) {
     return 0;
 }
 
+// Function to get address and values of surrounding tiles
 int GetSurroundingTiles(struct Grid* gp, int tile, int* surroundingTileAddresses, char* surroundingTiles) {
     int tileX = tile % gp->w;
     int tileY = tile / gp->w;
 
-    printf("fetched surr. tiles. pos x:%d, y:%d\n", tileX, tileY);
+    //printf("fetched surr. tiles. pos x:%d, y:%d\n", tileX, tileY);
     int x, y;
     int pos;
 
@@ -492,11 +498,12 @@ int GetSurroundingTiles(struct Grid* gp, int tile, int* surroundingTileAddresses
     return bombCount;
 }
 
+// Function to return # of bombs surrounding tile
 int GetSurroundingBombCount(struct Grid* gp, int tile) {
     int tileX = tile % gp->w;
     int tileY = tile / gp->w;
 
-    printf("pos x:%d, y:%d\n", tileX, tileY);
+    //printf("pos x:%d, y:%d\n", tileX, tileY);
     int x, y;
     int pos;
 
@@ -516,6 +523,7 @@ int GetSurroundingBombCount(struct Grid* gp, int tile) {
     return bombCount;
 }
 
+// Function to reveal a tile. Checks if new tile is bomb/not
 int RevealTile(struct Grid* gp, int gridPos) {
     if (gp->tiles[gridPos] == UNREVEALED) {
         if (gp->map[gridPos] == BOMB) {
@@ -530,6 +538,7 @@ int RevealTile(struct Grid* gp, int gridPos) {
     return 0;
 }
 
+// Function to flag/un-flag a tile
 void FlagTile(struct Grid* gp, int gridPos) {
     if (gp->tiles[gridPos] == FLAG) {
         gp->tiles[gridPos] = UNREVEALED;
@@ -547,7 +556,8 @@ void FlagTile(struct Grid* gp, int gridPos) {
     }
 }
 
-//This function is so wierd. I give up
+// Called when user reveals 0 tile to reveal all surrounding non-bomb tiles. Flood fill (?)
+// This function is so wierd. I give up.
 void RevealEmptyTiles(struct Grid* gp, int gridPos) {
 
     int adjacentBombCount;
@@ -576,7 +586,7 @@ void RevealEmptyTiles(struct Grid* gp, int gridPos) {
                         //gp->tiles[scanPos] = gp->map[scanPos];
                         RevealTile(gp, scanPos);
 
-                        printf("tile revealed. x: %d y: %d\n", scanPos % gp->w, scanPos / gp->w);
+                        //printf("tile revealed. x: %d y: %d\n", scanPos % gp->w, scanPos / gp->w);
                     }
                 }
             }
@@ -587,156 +597,220 @@ void RevealEmptyTiles(struct Grid* gp, int gridPos) {
     }
 }
 
-int DrawHud(Vector2 mousePos) {
-    //Hud bar
-    DrawRectangle((int)hudPos.x, (int)hudPos.y, (int)hudSize.x, (int)hudSize.y, LIGHTGRAY);
+// Called at the start to initialise ui.
+void InitUI(struct Hud* hudp, struct Menu* menup) {
 
-    Vector2 textPos1 = {hudPos.x+hudFontSpacing*2, hudPos.y+6};
+    printf("init ui start\n");
 
-    Vector2 textLen1 = MeasureTextEx(gameFont, "MENU", hudFontSize, hudFontSpacing);
+    hudp->hudPos = (Vector2){0, 0};
+    hudp->hudSize = (Vector2){0, 0};
 
-    Vector2 textPos2 = {hudPos.x + hudFontSize+hudFontSpacing + textLen1.x, hudPos.y+6};
+    menup->menuPos = (Vector2){0, 0};
 
-    Vector2 textLen2 = MeasureTextEx(gameFont, "START", hudFontSize, hudFontSpacing);
+    hudp->hudPos.x = 6 + (screenWidth - 16 * tileLen) / 2 - (12 + 200);
+    hudp->hudPos.y = startPos.y-100;
+
+    hudp->hudSize.x = 16 * tileLen + (9 + 200*2);
+    hudp->hudSize.y = 68;
 
 
+    menup->menuPos.x = hudp->hudPos.x;
+    menup->menuPos.y = hudp->hudPos.y + 100;
+
+    //Allocate Text Arrays
+    hudp->texts = malloc(sizeof(struct Text) * 5);
+    menup->texts = malloc(sizeof(struct Text) * 4);
+
+    //Init Hud
+    char hudText0[10];
+    char hudText1[10];
+    char hudText2[20];
+    char hudText3[20];
+    char hudText4[20];
+
+    hudp->texts[0].text = malloc(sizeof(char)*strlen(hudText0));
+    hudp->texts[1].text = malloc(sizeof(char)*strlen(hudText1));
+    hudp->texts[2].text = malloc(sizeof(char)*strlen(hudText2));
+    hudp->texts[3].text = malloc(sizeof(char)*strlen(hudText3));
+    hudp->texts[4].text = malloc(sizeof(char)*strlen(hudText4));
+
+    strcpy(hudp->texts[0].text, "MENU");
+    strcpy(hudp->texts[1].text, "START");
+    strcpy(hudp->texts[2].text, "Minesweeper");
+    strcpy(hudp->texts[3].text, "");
+    strcpy(hudp->texts[4].text, "Eren Kural");
 
 
-    char minesLeft[20] = "Minesweeper";
+    for (int i = 0; i < 4; i++) {
+        hudp->texts[i].color = BLACK;
+        hudp->texts[i].fontSize = hudFontSize;
+        hudp->texts[i].fontSpacing = hudFontSpacing;
+        hudp->texts[i].size = MeasureTextEx(gameFont, hudp->texts[i].text, hudp->texts[i].fontSize, hudp->texts[i].fontSpacing);
+    }
 
-    if (gameStage != 2)
+    hudp->texts[0].pos = (Vector2){hudp->hudPos.x+hudFontSpacing*2, hudp->hudPos.y+6};
 
-    sprintf(minesLeft, "%d Mines Left", grid.bombCount - grid.flagCount);
+    hudp->texts[1].pos = (Vector2){hudp->hudPos.x + hudFontSize+hudFontSpacing + hudp->texts[0].size.x, hudp->hudPos.y+6};
 
-    Vector2 textLen3 = MeasureTextEx(gameFont, minesLeft, hudFontSize, hudFontSpacing);
+    hudp->texts[2].pos = (Vector2){hudp->hudPos.x+hudp->hudSize.x-(2*hudFontSpacing+hudp->texts[2].size.x), hudp->hudPos.y+6};
 
-    Vector2 textPos3 = {hudPos.x+hudSize.x-(2*hudFontSpacing+textLen3.x), hudPos.y+6};
+    hudp->texts[3].pos = (Vector2){(screenWidth - hudp->texts[3].size.x) / 2, 640};
 
-    char endText[32] = "";
+    hudp->texts[4].color = BLACK;
+    hudp->texts[4].fontSize = 18;
+    hudp->texts[4].fontSpacing = 2;
+    hudp->texts[4].size = MeasureTextEx(gameFont, hudp->texts[4].text, hudp->texts[4].fontSize, hudp->texts[4].fontSpacing);
+    hudp->texts[4].pos = (Vector2){screenWidth - (hudp->texts[4].size.x + 8), screenHeight - (hudp->texts[4].size.y + 8)};
+
+    for (int i = 0; i < 5; i++) {
+        hudp->texts[i].collisionBox = RectangleFromVector2(&hudp->texts[i].pos, &hudp->texts[i].size);
+    }
+
+    //Init Menu
+    char menuText0[] = "Easy";
+    char menuText1[] = "Medium";
+    char menuText2[] = "Hard";
+    char menuText3[] = "Custom - Coming Soon";
+
+    menup->texts[0].text = malloc(sizeof(char)*strlen(menuText0));
+    menup->texts[1].text = malloc(sizeof(char)*strlen(menuText1));
+    menup->texts[2].text = malloc(sizeof(char)*strlen(menuText2));
+    menup->texts[3].text = malloc(sizeof(char)*strlen(menuText3));
+
+    strcpy(menup->texts[0].text, menuText0);
+    strcpy(menup->texts[1].text, menuText1);
+    strcpy(menup->texts[2].text, menuText2);
+    strcpy(menup->texts[3].text, menuText3);
+
+    for (int i = 0; i < 4; i++) {
+        menup->texts[i].color = BLACK;
+        menup->texts[i].fontSize = hudFontSize;
+        menup->texts[i].fontSpacing = hudFontSpacing;
+        menup->texts[i].size = MeasureTextEx(gameFont, menup->texts[i].text, menup->texts[i].fontSize, menup->texts[i].fontSpacing);
+        menup->texts[i].pos = (Vector2){(screenWidth - menup->texts[i].size.x) / 2, menup->menuPos.y+80*(i+1)};
+        menup->texts[i].collisionBox = RectangleFromVector2(&menup->texts[i].pos, &menup->texts[i].size);
+    }
+}
+
+
+//Function to draw UI. Executed during drawing.
+int DrawUI(Vector2 mousePos, struct Hud* hudp, struct Menu* menup) {
+
+    DrawRectangle((int)hudp->hudPos.x, (int)hudp->hudPos.y, (int)hudp->hudSize.x, (int)hudp->hudSize.y, LIGHTGRAY);
+
+    if (gameStage != 2) {
+        sprintf(hudp->texts[2].text, "%d Mines Left", grid.bombCount - grid.flagCount);
+    }
+
+    RecalculateTextSize(&hudp->texts[2]);
+
+    hudp->texts[2].pos = (Vector2){hudp->hudPos.x+hudp->hudSize.x-(2*hudFontSpacing+hudp->texts[2].size.x), hudp->hudPos.y+6};
+
+    RecalculateTextCollisionBox(&hudp->texts[2]);
 
     if (gameStage == -1) {
-        strcpy(endText, "Boom! You Lose");
+        strcpy(hudp->texts[3].text, "Boom! You Lose");
     } else if (gameStage == 3) {
-        strcpy(endText, "Congrats! You win");
+        strcpy(hudp->texts[3].text, "Congrats! You win");
     }
 
-    Vector2 textLen4 = MeasureTextEx(gameFont, endText, hudFontSize, hudFontSpacing);
-
-    Vector2 textPos4 = {(screenWidth - textLen4.x) / 2, 640};
-
-    Vector2 relativePos1 = Vector2Subtract(mousePos, textPos1);
-    Vector2 relativePos2 = Vector2Subtract(mousePos, textPos2);
-
-    Vector2 relativePosEasy = Vector2Subtract(mousePos, textPosEasy);
-    Vector2 relativePosMedium = Vector2Subtract(mousePos, textPosMedium);
-    Vector2 relativePosHard = Vector2Subtract(mousePos, textPosHard);
-    Vector2 relativePosCustom = Vector2Subtract(mousePos, textPosCustom);
+    if (gameStage == -1 || gameStage == 3) {
+        RecalculateTextSize(&hudp->texts[3]);
+        hudp->texts[3].pos = (Vector2){(screenWidth - hudp->texts[3].size.x) / 2, 640};
+        // RecalculateTextCollisionBox(&hudp->texts[3]); // Not necessary
+    }
 
     int cursorPos = -1;
+
+    if (CheckCollisionPointRec(mousePos, hudp->texts[0].collisionBox)) {
+        cursorPos = 1;
+    }
+    else if (CheckCollisionPointRec(mousePos, hudp->texts[1].collisionBox)) {
+        cursorPos = 2;
+    }
+
     if (gameStage == 2) {
-        if (relativePos1.x > 0 && relativePos1.y > 0 && relativePos1.x < textLen1.x && relativePos1.y < textLen1.y) {
-            cursorPos = 1;
-        }
-        else if (relativePos2.x > 0 && relativePos2.y > 0 && relativePos2.x < textLen2.x && relativePos2.y < textLen2.y) {
-            cursorPos = 2;
-        }
-        else if (relativePosEasy.x > 0 && relativePosEasy.y > 0 && relativePosEasy.x < textLenEasy.x && relativePosEasy.y < textLenEasy.y) {
+        if (CheckCollisionPointRec(mousePos, menup->texts[0].collisionBox)) {
             cursorPos = 3;
         }
-        else if (relativePosMedium.x > 0 && relativePosMedium.y > 0 && relativePosMedium.x < textLenMedium.x && relativePosMedium.y < textLenMedium.y) {
+        else if (CheckCollisionPointRec(mousePos, menup->texts[1].collisionBox)) {
             cursorPos = 4;
         }
-        else if (relativePosHard.x > 0 && relativePosHard.y > 0 && relativePosHard.x < textLenHard.x && relativePosHard.y < textLenHard.y) {
+        else if (CheckCollisionPointRec(mousePos, menup->texts[2].collisionBox)) {
             cursorPos = 5;
         }
-        else if (relativePosCustom.x > 0 && relativePosCustom.y > 0 && relativePosCustom.x < textLenCustom.x && relativePosCustom.y < textLenCustom.y) {
+        else if (CheckCollisionPointRec(mousePos, menup->texts[3].collisionBox)) {
             cursorPos = 6;
         }
-    } else {
-        if (relativePos1.x > 0 && relativePos1.y > 0 && relativePos1.x < textLen1.x && relativePos1.y < textLen1.y) {
-            cursorPos = 1;
-        }
-        else if (relativePos2.x > 0 && relativePos2.y > 0 && relativePos2.x < textLen2.x && relativePos2.y < textLen2.y) {
-            cursorPos = 2;
-        }
     }
 
-
-    char secondText[6] = "";
+    char randomStr[6];
 
     if (gameStage == 0 || gameStage == 2) {
-        strcpy(secondText, "START");
+        strcpy(randomStr, "START\0");
     } else {
-        strcpy(secondText, "RESET");
+        strcpy(randomStr, "RESET\0");
     }
 
-    if (cursorPos == 1) {
-        DrawTextEx(gameFont, "MENU", textPos1, hudFontSize, hudFontSpacing , DARKGRAY);
-    } else {
-        DrawTextEx(gameFont, "MENU", textPos1, hudFontSize, hudFontSpacing , BLACK);
+    strcpy(hudp->texts[1].text, randomStr);
 
-    }
-
-    if (cursorPos == 2) {
-        DrawTextEx(gameFont, secondText, textPos2, hudFontSize, hudFontSpacing , DARKGRAY);
-    } else {
-        DrawTextEx(gameFont, secondText, textPos2, hudFontSize, hudFontSpacing , BLACK);
-    }
 
     if (gameStage == 2) {
-        switch (difficulty) {
-            case 0: {
-                DrawRectangle((int)textPosEasy.x - sp, (int)textPosEasy.y -sp, (int)textLenEasy.x + 2*sp, (int)textLenEasy.y + 2*sp, LIME);
-                break;
-            }
-            case 1: {
-                DrawRectangle((int)textPosMedium.x - sp, (int)textPosMedium.y -sp, (int)textLenMedium.x + 2*sp, (int)textLenMedium.y + 2*sp, LIME);
-                break;
-            }
-            case 2: {
-                DrawRectangle((int)textPosHard.x - sp, (int)textPosHard.y -sp, (int)textLenHard.x + 2*sp, (int)textLenHard.y + 2*sp, LIME);
-                break;
+        const Rectangle box = menup->texts[difficulty].collisionBox;
+        DrawRectangle((int)box.x - sp, (int)box.y - sp, (int)box.width + 2*sp, (int)box.height + 2*sp, LIME);
+
+        for (int i = 0; i < 4; i++) {
+            if (i == (cursorPos - 3) && cursorPos != 6) {
+                DrawTextFromStructColor(&menup->texts[i], DARKGRAY);
+            } else {
+                DrawTextFromStruct(&menup->texts[i]);
             }
         }
-
-
-        if (cursorPos == 3) {
-            DrawTextEx(gameFont, "Easy", textPosEasy, hudFontSize, hudFontSpacing , DARKGRAY);
-        } else {
-            DrawTextEx(gameFont, "Easy", textPosEasy, hudFontSize, hudFontSpacing , BLACK);
-        }
-
-        if (cursorPos == 4) {
-            DrawTextEx(gameFont, "Medium", textPosMedium, hudFontSize, hudFontSpacing , DARKGRAY);
-        } else {
-            DrawTextEx(gameFont, "Medium", textPosMedium, hudFontSize, hudFontSpacing , BLACK);
-        }
-
-        if (cursorPos == 5) {
-            DrawTextEx(gameFont, "Hard", textPosHard, hudFontSize, hudFontSpacing , DARKGRAY);
-        } else {
-            DrawTextEx(gameFont, "Hard", textPosHard, hudFontSize, hudFontSpacing , BLACK);
-        }
-
-        DrawTextEx(gameFont, "Custom - Coming Soon", textPosCustom, hudFontSize, hudFontSpacing , BLACK);
     }
-    DrawTextEx(gameFont, minesLeft, textPos3, hudFontSize, hudFontSpacing , BLACK);
-
-    DrawTextEx(gameFont, endText, textPos4, hudFontSize, hudFontSpacing , BLACK);
-
-    Vector2 creditLen = MeasureTextEx(gameFont, "Eren Kural", 18, 2);
-
-    Vector2 creditPos = {screenWidth - (creditLen.x + 8), screenHeight - (creditLen.y + 8)};
-
-    //DrawText("Eren Kural", screenWidth - 100, screenHeight - 24, 18, BLACK);
-    DrawTextEx(gameFont, "Eren Kural", creditPos, 18, 2, BLACK);
 
 
+    for (int i = 0; i < 2; i++) {
+        if (i == (cursorPos - 1)) {
+            DrawTextFromStructColor(&hudp->texts[i], DARKGRAY);
+        } else {
+            DrawTextFromStruct(&hudp->texts[i]);
+        }
+    }
 
+    DrawTextFromStruct(&hudp->texts[2]);
 
+    if (gameStage == -1 || gameStage == 3) {
+        DrawTextFromStruct(&hudp->texts[3]);
+    }
+
+    DrawTextFromStruct(&hudp->texts[4]);
 
     return cursorPos;
 }
+
+// UI Helper functions
+void RecalculateTextSize(struct Text* textp) {
+    textp->size = MeasureTextEx(gameFont, textp->text, textp->fontSize, textp->fontSpacing);
+}
+
+void RecalculateTextCollisionBox(struct Text* textp) {
+    textp->collisionBox = RectangleFromVector2(&textp->pos, &textp->size);
+}
+
+Rectangle RectangleFromVector2(Vector2* pos, Vector2* size) {
+    return (Rectangle){pos->x, pos->y, size->x, size->y};
+}
+
+void DrawTextFromStruct(struct Text* textp) {
+    DrawTextFromStructColor(textp, textp->color);
+}
+
+void DrawTextFromStructColor(struct Text* textp, Color color) {
+    DrawTextEx(gameFont, textp->text, textp->pos, textp->fontSize, textp->fontSpacing, color);
+}
+//UI Helper functions end
+
+// Executed when user reveals bomb
 void LoseGame(struct Grid* gp, int gridPos) {
     gameStage = -1;
     for (int i = 0; i < gp->len; i++) {
@@ -749,6 +823,26 @@ void LoseGame(struct Grid* gp, int gridPos) {
     gp->tiles[gridPos] = BOMB_RED;
 }
 
+// Called at the start to initialise difficulty structs.
+void InitDifficulty(void) {
+    //set difficulties
+    easy.h = 8;
+    easy.w = 12;
+    easy.bombCount = 20;
+    easy.difficulty = 0;
+
+    medium.h = 12;
+    medium.w = 16;
+    medium.bombCount = 36;
+    medium.difficulty = 1;
+
+    hard.h = 16;
+    hard.w = 24;
+    hard.bombCount = 80;
+    hard.difficulty = 2;
+}
+
+// Called when difficulty is updated. Modifies grid accordingly.
 char UpdateDifficulty(struct Grid* gp, struct Setting* setting) {
     h = gp->h = setting->h;
     w = gp->w = setting->w;
